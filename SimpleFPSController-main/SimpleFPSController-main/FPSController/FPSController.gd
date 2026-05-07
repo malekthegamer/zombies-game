@@ -47,6 +47,16 @@ var cam_aligned_wish_dir := Vector3.ZERO
 const CROUCH_TRANSLATE = 0.7
 const CROUCH_JUMP_ADD = CROUCH_TRANSLATE * 0.9 # * 0.9 for sourcelike camera jitter in air on crouch, makes for a nice notifier
 var is_crouched := false
+var is_sliding := false
+var slide_timer := 0.0
+var slide_cooldown_timer := 0.0
+const SLIDE_DURATION := 1.2
+const SLIDE_SPEED_MIN := 4.0
+const SLIDE_BOOST := 2.0
+const SLIDE_FRICTION := 0.97
+const SLIDE_MIN_TRIGGER_SPEED := 4.0
+const SLIDE_COOLDOWN := 0.6
+const SLIDE_CAMERA_TILT := 0.08
 
 var noclip_speed_mult := 3.0
 var noclip := false
@@ -59,6 +69,8 @@ const VIEW_MODEL_LAYER = 9
 const WORLD_MODEL_LAYER = 2
 
 func get_move_speed() -> float:
+	if is_sliding:
+		return walk_speed * 0.6
 	if is_crouched:
 		return walk_speed * 0.6
 	return sprint_speed if Input.is_action_pressed("sprint") else walk_speed
@@ -384,10 +396,52 @@ func _handle_water_physics(delta) -> bool:
 	
 	return true
 
+func _handle_slide(delta):
+	slide_cooldown_timer = maxf(slide_cooldown_timer - delta, 0.0)
+	
+	var should_start_slide = (
+		Input.is_action_just_pressed("crouch")
+		and Input.is_action_pressed("sprint")
+		and is_on_floor()
+		and not is_sliding
+		and slide_cooldown_timer <= 0.0
+		and self.velocity.length() >= SLIDE_MIN_TRIGGER_SPEED
+	)
+	
+	if should_start_slide:
+		is_sliding = true
+		slide_timer = SLIDE_DURATION
+		slide_cooldown_timer = SLIDE_COOLDOWN
+		is_crouched = true
+		
+		var horizontal_velocity = Vector3(self.velocity.x, 0.0, self.velocity.z) * SLIDE_BOOST
+		var horizontal_speed = horizontal_velocity.length()
+		if horizontal_speed < 10.0:
+			if horizontal_speed > 0.0:
+				horizontal_velocity = horizontal_velocity.normalized() * 10.0
+			elif wish_dir.length() > 0.0:
+				horizontal_velocity = wish_dir.normalized() * 10.0
+			else:
+				horizontal_velocity = -self.global_transform.basis.z.normalized() * 10.0
+		self.velocity.x = horizontal_velocity.x
+		self.velocity.z = horizontal_velocity.z
+	
+	if is_sliding:
+		is_crouched = true
+		slide_timer -= delta
+		var horizontal_slide_speed = Vector3(self.velocity.x, 0.0, self.velocity.z).length()
+		if slide_timer <= 0.0 or horizontal_slide_speed < SLIDE_SPEED_MIN or not is_on_floor():
+			is_sliding = false
+	
+	var target_slide_tilt = SLIDE_CAMERA_TILT if is_sliding else 0.0
+	%Camera3D.rotation.z = lerp(%Camera3D.rotation.z, target_slide_tilt, minf(1.0, 10.0 * delta))
+
 @onready var _original_capsule_height = $CollisionShape3D.shape.height
 func _handle_crouch(delta) -> void:
 	var was_crouched_last_frame = is_crouched
-	if Input.is_action_pressed("crouch"):
+	if is_sliding:
+		is_crouched = true
+	elif Input.is_action_pressed("crouch"):
 		is_crouched = true
 	elif is_crouched and not self.test_move(self.global_transform, Vector3(0,CROUCH_TRANSLATE,0)):
 		is_crouched = false
@@ -490,6 +544,12 @@ func _handle_air_physics(delta) -> void:
 		clip_velocity(wall_normal, 1, delta) # Allows surf
 
 func _handle_ground_physics(delta) -> void:
+	if is_sliding:
+		self.velocity.x *= SLIDE_FRICTION
+		self.velocity.z *= SLIDE_FRICTION
+		_headbob_effect(delta)
+		return
+	
 	# Similar to the air movement. Acceleration and friction on ground.
 	var cur_speed_in_wish_dir = self.velocity.dot(wish_dir)
 	var add_speed_till_cap = get_move_speed() - cur_speed_in_wish_dir
@@ -520,12 +580,13 @@ func _physics_process(delta):
 	if camera_style == CameraStyle.THIRD_PERSON_FREE_LOOK:
 		wish_dir = %ThirdPersonOrbitCamYaw.global_transform.basis * Vector3(input_dir.x, 0., input_dir.y)
 	
+	_handle_slide(delta)
 	_handle_crouch(delta)
 	
 	if not _handle_noclip(delta) and not _handle_ladder_physics():
 		if not _handle_water_physics(delta):
 			if is_on_floor() or _snapped_to_stairs_last_frame:
-				if Input.is_action_just_pressed("jump") or (auto_bhop and Input.is_action_pressed("jump")):
+				if not is_sliding and (Input.is_action_just_pressed("jump") or (auto_bhop and Input.is_action_pressed("jump"))):
 					self.velocity.y = jump_velocity
 				_handle_ground_physics(delta)
 			else:
