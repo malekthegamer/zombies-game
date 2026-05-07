@@ -47,16 +47,18 @@ var cam_aligned_wish_dir := Vector3.ZERO
 const CROUCH_TRANSLATE = 0.7
 const CROUCH_JUMP_ADD = CROUCH_TRANSLATE * 0.9 # * 0.9 for sourcelike camera jitter in air on crouch, makes for a nice notifier
 var is_crouched := false
+@export var auto_sprint_active := false
 var is_sliding := false
 var slide_timer := 0.0
 var slide_cooldown_timer := 0.0
-const SLIDE_DURATION := 1.2
+var slide_queued := false
+const SLIDE_DURATION := 1.0
 const SLIDE_SPEED_MIN := 4.0
-const SLIDE_BOOST := 2.0
-const SLIDE_FRICTION := 0.97
-const SLIDE_MIN_TRIGGER_SPEED := 4.0
+const SLIDE_BOOST := 2.6
+const SLIDE_FRICTION := 0.94
+const SLIDE_MIN_TRIGGER_SPEED := 5.0
 const SLIDE_COOLDOWN := 0.6
-const SLIDE_CAMERA_TILT := 0.08
+const SLIDE_CAMERA_TILT := 0.06
 
 var noclip_speed_mult := 3.0
 var noclip := false
@@ -64,6 +66,7 @@ var noclip := false
 const MAX_STEP_HEIGHT = 0.5 # Raycasts length should match this. StairsAhead one should be slightly longer.
 var _snapped_to_stairs_last_frame := false
 var _last_frame_was_on_floor = -INF
+var _was_on_floor_last_frame := false
 
 const VIEW_MODEL_LAYER = 9
 const WORLD_MODEL_LAYER = 2
@@ -73,7 +76,7 @@ func get_move_speed() -> float:
 		return walk_speed * 0.6
 	if is_crouched:
 		return walk_speed * 0.6
-	return sprint_speed if Input.is_action_pressed("sprint") else walk_speed
+	return sprint_speed if auto_sprint_active or Input.is_action_pressed("sprint") else walk_speed
 
 func _ready():
 	update_view_and_world_model_masks()
@@ -188,14 +191,14 @@ func _handle_controller_look_input(delta):
 func update_animations():
 	animation_tree.is_crouched = is_crouched
 	animation_tree.is_in_air = noclip or (not is_on_floor() and not _snapped_to_stairs_last_frame)
-	animation_tree.is_sprinting = Input.is_action_pressed("sprint")
+	animation_tree.is_sprinting = auto_sprint_active or Input.is_action_pressed("sprint")
 	
 	var rel_vel = self.global_basis.inverse() * ((self.velocity * Vector3(1,0,1)) / get_move_speed())
 	var rel_vel_xz = Vector2(rel_vel.x, -rel_vel.z)
 	
 	if is_crouched:
 		animation_tree.set("parameters/AnimationNodeStateMachine/Crouched/CrouchBlendSpace2D/blend_position", rel_vel_xz)
-	elif Input.is_action_pressed("sprint"):
+	elif auto_sprint_active or Input.is_action_pressed("sprint"):
 		animation_tree.set("parameters/AnimationNodeStateMachine/Standing/RunBlendSpace2D/blend_position", rel_vel_xz)
 	else:
 		animation_tree.set("parameters/AnimationNodeStateMachine/Standing/WalkBlendSpace2D/blend_position", rel_vel_xz)
@@ -396,12 +399,44 @@ func _handle_water_physics(delta) -> bool:
 	
 	return true
 
+func _horizontal_speed() -> float:
+	return Vector3(self.velocity.x, 0.0, self.velocity.z).length()
+
+func _start_slide() -> void:
+	is_sliding = true
+	slide_timer = SLIDE_DURATION
+	slide_cooldown_timer = SLIDE_COOLDOWN
+	is_crouched = true
+	
+	var horizontal_velocity = Vector3(self.velocity.x, 0.0, self.velocity.z) * SLIDE_BOOST
+	var horizontal_speed = horizontal_velocity.length()
+	if horizontal_speed < 10.0:
+		if horizontal_speed > 0.0:
+			horizontal_velocity = horizontal_velocity.normalized() * 10.0
+		elif wish_dir.length() > 0.0:
+			horizontal_velocity = wish_dir.normalized() * 10.0
+		else:
+			horizontal_velocity = -self.global_transform.basis.z.normalized() * 10.0
+	self.velocity.x = horizontal_velocity.x
+	self.velocity.z = horizontal_velocity.z
+
+func _end_slide() -> void:
+	if not is_sliding:
+		return
+	is_sliding = false
+	slide_timer = 0.0
+	if _horizontal_speed() > 0.1:
+		auto_sprint_active = true
+
 func _handle_slide(delta):
 	slide_cooldown_timer = maxf(slide_cooldown_timer - delta, 0.0)
 	
+	if Input.is_action_just_pressed("crouch") and not is_on_floor() and auto_sprint_active:
+		slide_queued = true
+	
 	var should_start_slide = (
 		Input.is_action_just_pressed("crouch")
-		and Input.is_action_pressed("sprint")
+		and (Input.is_action_pressed("sprint") or auto_sprint_active)
 		and is_on_floor()
 		and not is_sliding
 		and slide_cooldown_timer <= 0.0
@@ -409,29 +444,14 @@ func _handle_slide(delta):
 	)
 	
 	if should_start_slide:
-		is_sliding = true
-		slide_timer = SLIDE_DURATION
-		slide_cooldown_timer = SLIDE_COOLDOWN
-		is_crouched = true
-		
-		var horizontal_velocity = Vector3(self.velocity.x, 0.0, self.velocity.z) * SLIDE_BOOST
-		var horizontal_speed = horizontal_velocity.length()
-		if horizontal_speed < 10.0:
-			if horizontal_speed > 0.0:
-				horizontal_velocity = horizontal_velocity.normalized() * 10.0
-			elif wish_dir.length() > 0.0:
-				horizontal_velocity = wish_dir.normalized() * 10.0
-			else:
-				horizontal_velocity = -self.global_transform.basis.z.normalized() * 10.0
-		self.velocity.x = horizontal_velocity.x
-		self.velocity.z = horizontal_velocity.z
+		_start_slide()
 	
 	if is_sliding:
 		is_crouched = true
 		slide_timer -= delta
-		var horizontal_slide_speed = Vector3(self.velocity.x, 0.0, self.velocity.z).length()
+		var horizontal_slide_speed = _horizontal_speed()
 		if slide_timer <= 0.0 or horizontal_slide_speed < SLIDE_SPEED_MIN or not is_on_floor():
-			is_sliding = false
+			_end_slide()
 	
 	var target_slide_tilt = SLIDE_CAMERA_TILT if is_sliding else 0.0
 	%Camera3D.rotation.z = lerp(%Camera3D.rotation.z, target_slide_tilt, minf(1.0, 10.0 * delta))
@@ -569,6 +589,14 @@ func _handle_ground_physics(delta) -> void:
 	_headbob_effect(delta)
 
 func _physics_process(delta):
+	if Input.is_action_just_pressed("sprint"):
+		auto_sprint_active = not auto_sprint_active
+	
+	if not _was_on_floor_last_frame and is_on_floor():
+		if slide_queued and _horizontal_speed() >= SLIDE_MIN_TRIGGER_SPEED and slide_cooldown_timer <= 0.0 and not is_sliding:
+			_start_slide()
+		slide_queued = false
+	
 	if is_on_floor(): _last_frame_was_on_floor = Engine.get_physics_frames()
 	
 	_update_camera()
@@ -583,12 +611,26 @@ func _physics_process(delta):
 	_handle_slide(delta)
 	_handle_crouch(delta)
 	
+	if not is_sliding and is_on_floor() and Input.is_action_just_pressed("crouch"):
+		auto_sprint_active = false
+	
 	if not _handle_noclip(delta) and not _handle_ladder_physics():
 		if not _handle_water_physics(delta):
 			if is_on_floor() or _snapped_to_stairs_last_frame:
-				if not is_sliding and (Input.is_action_just_pressed("jump") or (auto_bhop and Input.is_action_pressed("jump"))):
-					self.velocity.y = jump_velocity
-				_handle_ground_physics(delta)
+				var did_slide_jump := false
+				if Input.is_action_just_pressed("jump") or (auto_bhop and Input.is_action_pressed("jump")):
+					if is_sliding:
+						var horizontal_slide_speed = _horizontal_speed()
+						var can_slide_jump = slide_timer <= 0.3 or horizontal_slide_speed > 7.0
+						if can_slide_jump:
+							_end_slide()
+							slide_cooldown_timer = 0.0
+							self.velocity.y = jump_velocity + 1.5
+							did_slide_jump = true
+					else:
+						self.velocity.y = jump_velocity
+				if not did_slide_jump:
+					_handle_ground_physics(delta)
 			else:
 				_handle_air_physics(delta)
 		
@@ -600,4 +642,8 @@ func _physics_process(delta):
 			move_and_slide()
 			_snap_down_to_stairs_check()
 	
+	if is_on_floor() and _horizontal_speed() < 0.1 and not is_sliding:
+		auto_sprint_active = false
+	
 	_slide_camera_smooth_back_to_origin(delta)
+	_was_on_floor_last_frame = is_on_floor()
