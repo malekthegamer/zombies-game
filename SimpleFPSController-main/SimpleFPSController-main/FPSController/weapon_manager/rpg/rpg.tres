@@ -1,8 +1,8 @@
-[gd_resource type="Resource" script_class="ProjectileWeaponResource" load_steps=18 format=4 uid="uid://qhax17vsxm8v"]
+[gd_resource type="Resource" script_class="ProjectileWeaponResource" format=4 uid="uid://qhax17vsxm8v"]
 
 [ext_resource type="PackedScene" uid="uid://bu6i3jjm3qmrq" path="res://FPSController/weapon_manager/rpg/rocket.tscn" id="1_0ly76"]
 [ext_resource type="Texture2D" uid="uid://bgnvsqeaq81pn" path="res://FPSController/weapon_manager/rpg/rocket-launcher-icon.PNG" id="1_ku5oj"]
-[ext_resource type="Script" path="res://FPSController/weapon_manager/projectile_weapon_resource.gd" id="1_nsrch"]
+[ext_resource type="Script" uid="uid://dnf7a5b6o2fg1" path="res://FPSController/weapon_manager/projectile_weapon_resource.gd" id="1_nsrch"]
 [ext_resource type="PackedScene" uid="uid://ualtb5j6bg2n" path="res://FPSController/weapon_manager/rpg/rocket-launcher.glb" id="3_kb014"]
 
 [sub_resource type="StandardMaterial3D" id="StandardMaterial3D_y3ce0"]
@@ -186,8 +186,10 @@ _bundled = {
 "conn_count": 0,
 "conns": PackedInt32Array(),
 "editable_instances": [],
+"id_paths": [],
 "names": PackedStringArray("rocket-launcher", "Node3D", "Cylinder_024", "transform", "mesh", "skeleton", "MeshInstance3D", "Cube_062", "Cube_061", "Cube_060", "Cylinder"),
 "node_count": 6,
+"node_ids": PackedInt32Array(),
 "node_paths": [],
 "nodes": PackedInt32Array(-1, -1, 1, 0, -1, 0, 0, 0, 0, 6, 2, -1, 3, 3, 0, 4, 1, 5, 2, 0, 0, 0, 6, 7, -1, 3, 3, 3, 4, 4, 5, 2, 0, 0, 0, 6, 8, -1, 3, 3, 5, 4, 6, 5, 2, 0, 0, 0, 6, 9, -1, 3, 3, 7, 4, 8, 5, 2, 0, 0, 0, 6, 10, -1, 3, 3, 9, 4, 10, 5, 2, 0),
 "variants": [Transform3D(0, 1.91936, 0, -0.829801, 0, 0, 0, 0, 0.829801, -1.71311, 0.0467776, -0.0465951), SubResource("ArrayMesh_t1a46"), NodePath(""), Transform3D(0.122728, -0.0194102, 0.000413557, 0.0194184, 0.122704, -0.0016609, -0.000217047, 0.00248481, 0.0852481, 2.34837, -1.06194, -0.0465951), SubResource("ArrayMesh_pc6o8"), Transform3D(0.0918619, 0.000760763, 0.000247555, -0.000505595, 0.137351, -0.00302587, -0.000160511, 0.00274731, 0.151209, 2.75383, -1.21605, -0.0465951), SubResource("ArrayMesh_5ybfp"), Transform3D(0.306065, 0, 0, 0, 0.306065, 0, 0, 0, 0.210027, 1.85662, -1.74219, -0.0465951), SubResource("ArrayMesh_getl5"), Transform3D(0.501864, 0, 0, 0, 1.11575, 0, 0, 0, 0.501864, 3.51234, -1.50195, 0), SubResource("ArrayMesh_o2ghr")],
@@ -197,13 +199,9 @@ _bundled = {
 [resource]
 script = ExtResource("1_nsrch")
 projectile = ExtResource("1_0ly76")
-projectile_relative_velocity = Vector3(0, 0, -15)
-projectile_relative_spawn_pos = Vector3(0, 0, -3)
-projectile_relative_spawn_rotation = Vector3(0, 0, 0)
 name = "RPG"
 icon = ExtResource("1_ku5oj")
 slot = 4
-slot_priority = 1
 view_model = ExtResource("3_kb014")
 world_model = SubResource("PackedScene_gg5uu")
 view_model_pos = Vector3(0.645, -0.503, -0.631)
@@ -213,14 +211,7 @@ world_model_pos = Vector3(-0.017, 0.285, 0.109)
 world_model_rot = Vector3(-0.002, 2.281, 1.581)
 world_model_scale = Vector3(0.149, 0.149, 0.149)
 hold_style = 2
-view_idle_anim = ""
-view_equip_anim = ""
-view_shoot_anim = ""
-view_reload_anim = ""
-damage = 10
 current_ammo = 11.0
 magazine_capacity = 11.0
-reserve_ammo = inf
-max_reserve_ammo = inf
 auto_fire = false
 max_fire_rate_ms = 750.0
